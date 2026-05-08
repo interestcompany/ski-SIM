@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ski Life Simulator: 5 Resorts & 3 Jobs</title>
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Hiragino Kaku Gothic ProN', sans-serif; }
+        #ui-panel {
+            position: absolute; top: 10px; left: 10px; width: 280px;
+            background: rgba(0, 10, 25, 0.95); color: #fff; padding: 15px; border-radius: 15px; z-index: 1000; border: 1px solid #00d4ff;
+        }
+        .status-info { display:flex; justify-content:space-between; margin-bottom:8px; font-size:12px; border-bottom:1px solid #333; padding-bottom:5px; }
+        .section-title { font-size: 10px; color: #00d4ff; margin: 8px 0 4px 0; letter-spacing: 1px; text-transform: uppercase; font-weight: bold; }
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+        .btn-grid-5 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+        button { background: #1a2a3a; color: white; border: 1px solid #444; padding: 6px 2px; border-radius: 4px; font-size: 10px; cursor: pointer; }
+        button.active { border: 2px solid #00d4ff; background: #003355; color: #00d4ff; font-weight:bold; }
+        #mission-panel { display:none; margin-top:10px; padding:8px; background:rgba(255,165,0,0.2); border-radius:5px; border:1px solid orange; }
+        #announcement { position: absolute; bottom: 30px; width: 100%; text-align: center; color: white; pointer-events: none; text-shadow: 2px 2px 5px #000; }
+        #emergency-ui { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:120px; height:120px; background:red; color:white; border-radius:50%; text-align:center; line-height:120px; font-weight:bold; border:5px solid white; z-index:2000; cursor:pointer; }
+    </style>
+</head>
+<body>
+
+    <div id="emergency-ui" onclick="resolveEmergency()">緊急停止</div>
+
+    <div id="ui-panel">
+        <div class="status-info">
+            <span>💰 <span id="money">10000</span>円</span>
+            <span id="ticket-tag" style="color:#00ffcc;">🎫 なし</span>
+        </div>
+
+        <div class="section-title">1. エリアを選択</div>
+        <div class="btn-grid-5">
+            <button id="btn-karuizawa" onclick="changeArea('karuizawa')">軽井沢</button>
+            <button id="btn-nozawa" onclick="changeArea('nozawa')">野沢温泉</button>
+            <button id="btn-niseko" onclick="changeArea('niseko')">ニセコ</button>
+            <button id="btn-shiga" onclick="changeArea('shiga')">志賀高原</button>
+            <button id="btn-hakuba" onclick="changeArea('hakuba')">白馬八方</button>
+        </div>
+
+        <div class="section-title">2. リフト券</div>
+        <div class="btn-grid">
+            <button onclick="buy(3000, '半日券')">半日</button>
+            <button onclick="buy(5000, '1日券')">1日</button>
+            <button onclick="buy(10000, '全日券')">ｼｰｽﾞﾝ</button>
+        </div>
+
+        <div class="section-title">3. 仕事を開始する</div>
+        <div class="btn-grid">
+            <button id="job-patrol" onclick="startJob('patrol')">ﾊﾟﾄﾛｰﾙ</button>
+            <button id="job-op" onclick="startJob('op')">運転士</button>
+            <button id="job-snow" onclick="startJob('snow')">圧雪員</button>
+        </div>
+
+        <div id="mission-panel">
+            <div id="mission-desc" style="font-size:11px; margin-bottom:5px;">任務：待機中...</div>
+            <button onclick="quitJob()" style="width:100%; background:#444; color:white; border:none; padding:4px;">仕事を辞めてフリーへ</button>
+        </div>
+
+        <button onclick="backToBase()" style="width:100%; margin-top:10px; background:#2c3e50; color:white; border:none; padding:8px; border-radius:4px;">リフト乗り場へ戻る</button>
+    </div>
+
+    <div id="announcement">
+        <h2 id="area-title">スキー場を選択</h2>
+        <p id="area-desc">エリアごとに仕事の内容も変化します</p>
+    </div>
+
+    <a-scene fog="type: exponential; density: 0.005; color: #fff">
+        <a-sky id="sky" color="#87CEEB"></a-sky>
+        
+        <a-cone id="bg-mountain" position="600 -50 900" radius-bottom="400" height="800" color="#ddd" visible="false"></a-cone>
+
+        <a-plane rotation="-82 0 0" width="2000" height="3500" color="#fff" position="0 100 -500"></a-plane>
+        <a-plane rotation="-90 0 0" width="3000" height="3000" color="#eee" position="0 -0.5 0"></a-plane>
+
+        <a-sphere id="victim" position="40 0.5 -200" radius="2" color="yellow" visible="false"></a-sphere>
+        <a-box id="net-point" position="-40 1 -400" scale="15 2 0.5" color="orange" opacity="0.5" visible="false"></a-box>
+
+        <a-entity id="lift-chair">
+            <a-box width="4" height="0.3" depth="1.5" color="#111" position="25 2 -10">
+                <a-text value="LIFT" align="center" position="0 0.8 0" color="#00ffcc" width="6"></a-text>
+            </a-box>
+        </a-entity>
+
+        <a-entity id="rig" position="0 0 15" wasd-controls="acceleration: 150">
+            <a-camera look-controls>
+                <a-entity id="cockpit" visible="false">
+                    <a-box position="0 -0.8 -0.5" scale="2 0.2 1" color="#111"></a-box>
+                </a-entity>
+            </a-camera>
+        </a-entity>
+    </a-scene>
+
+    <script>
+        let money = 10000;
+        let ticket = "なし";
+        let currentArea = '';
+        let currentJob = 'none';
+        let isOnLift = false;
+        let liftStep = 0;
+        let emergencyTimer;
+
+        const resorts = {
+            karuizawa: { name: "軽井沢プリンスホテルスキー場", sky: "#00aaff", fog: 0.002, speed: 0.005, slope: 0.8 },
+            nozawa: { name: "野沢温泉スキー場", sky: "#ffffff", fog: 0.012, speed: 0.003, slope: 0.6 },
+            niseko: { name: "ニセコ東急 グラン・ヒラフ", sky: "#bbbbbb", fog: 0.05, speed: 0.002, slope: 0.4 },
+            shiga: { name: "志賀高原 焼額山", sky: "#dff9fb", fog: 0.008, speed: 0.0035, slope: 0.65 },
+            hakuba: { name: "白馬八方尾根スキー場", sky: "#f1f2f6", fog: 0.005, speed: 0.0025, slope: 1.0 }
+        };
+
+        function changeArea(id) {
+            currentArea = id;
+            const r = resorts[id];
+            document.getElementById('area-title').innerText = r.name;
+            document.getElementById('sky').setAttribute('color', r.sky);
+            document.querySelector('a-scene').setAttribute('fog', `density: ${r.fog}`);
+            document.getElementById('bg-mountain').setAttribute('visible', (id === 'niseko' || id === 'hakuba'));
+            
+            document.querySelectorAll('.btn-grid-5 button').forEach(b => b.classList.remove('active'));
+            document.getElementById('btn-' + id).classList.add('active');
+            backToBase();
+        }
+
+        function buy(price, type) {
+            if(money >= price) {
+                money -= price; ticket = type;
+                updateUI();
+                alert(type + "購入完了！全エリアでリフト利用・仕事が可能になりました。");
+            } else { alert("お金が足りません"); }
+        }
+
+        function startJob(type) {
+            if(ticket === "なし") return alert("仕事場（山頂）へ行くにはリフト券が必要です！");
+            currentJob = type;
+            document.getElementById('mission-panel').style.display = 'block';
+            
+            if(type === 'patrol') {
+                document.getElementById('mission-desc').innerText = "任務：遭難者を救助(黄色)し、ネット(橙)を設置せよ";
+                document.getElementById('victim').setAttribute('visible', 'true');
+                document.getElementById('net-point').setAttribute('visible', 'true');
+            } else if(type === 'op') {
+                document.getElementById('mission-desc').innerText = "任務：リフトの安全運行。異常時は赤いボタンを押せ";
+                backToBase(); // 乗り場へ
+                triggerEmergency();
+            } else if(type === 'snow') {
+                document.getElementById('mission-desc').innerText = "任務：圧雪車でコースを整備せよ";
+                document.getElementById('cockpit').setAttribute('visible', 'true');
+            }
+        }
+
+        function quitJob() {
+            currentJob = 'none';
+            document.getElementById('mission-panel').style.display = 'none';
+            document.getElementById('cockpit').setAttribute('visible', 'false');
+            document.getElementById('victim').setAttribute('visible', 'false');
+            document.getElementById('net-point').setAttribute('visible', 'false');
+            document.getElementById('emergency-ui').style.display = 'none';
+            clearTimeout(emergencyTimer);
+        }
+
+        function triggerEmergency() {
+            emergencyTimer = setTimeout(() => {
+                if(currentJob === 'op') document.getElementById('emergency-ui').style.display = 'block';
+            }, 5000 + Math.random()*5000);
+        }
+
+        function resolveEmergency() {
+            document.getElementById('emergency-ui').style.display = 'none';
+            money += 2000; updateUI();
+            alert("リフト復旧成功！報酬2000円");
+            triggerEmergency();
+        }
+
+        function backToBase() {
+            document.getElementById('rig').setAttribute('position', '0 0 15');
+            isOnLift = false;
+        }
+
+        function updateUI() {
+            document.getElementById('money').innerText = money;
+            document.getElementById('ticket-tag').innerText = "🎫 " + ticket;
+        }
+
+        setInterval(() => {
+            const rig = document.getElementById('rig');
+            const pos = rig.getAttribute('position');
+            if(!currentArea) return;
+            const r = resorts[currentArea];
+
+            // 1. リフト
+            liftStep += r.speed;
+            let lZ = -10 - (Math.abs(Math.sin(liftStep)) * 1000);
+            let lY = Math.abs(lZ) * 0.16 + 2;
+            document.getElementById('lift-chair').setAttribute('position', `25 ${lY} ${lZ}`);
+
+            const dist = Math.sqrt(Math.pow(pos.x - 25, 2) + Math.pow(pos.z - lZ, 2));
+            if(dist < 4 && !isOnLift && ticket !== "なし") {
+                isOnLift = true;
+                document.getElementById('area-desc').innerText = "🚠 山頂へ運搬中...";
+            }
+
+            if(isOnLift) {
+                rig.setAttribute('position', `25 ${lY + 1.5} ${lZ}`);
+                if(lZ < -980) {
+                    isOnLift = false;
+                    rig.setAttribute('position', `0 160 -1000`);
+                }
+            } else if(pos.z < -10) {
+                // 2. 滑走物理
+                rig.setAttribute('position', `${pos.x} ${Math.max(0, Math.abs(pos.z)*0.16)} ${pos.z + r.slope}`);
+                
+                // 3. 仕事ミッション判定
+                if(currentJob === 'patrol') {
+                    const dV = Math.sqrt(Math.pow(pos.x-40,2)+Math.pow(pos.z+200,2));
+                    if(dV < 5 && document.getElementById('victim').getAttribute('visible')) {
+                        document.getElementById('victim').setAttribute('visible', 'false');
+                        alert("救助成功！次に安全ネットの場所へ向かえ");
+                    }
+                    const dN = Math.sqrt(Math.pow(pos.x+40,2)+Math.pow(pos.z+400,2));
+                    if(dN < 8 && !document.getElementById('victim').getAttribute('visible')) {
+                        money += 5000; updateUI();
+                        alert("ミッション完了！報酬5000円");
+                        quitJob();
+                    }
+                }
+            }
+        }, 20);
+
+        changeArea('karuizawa');
+    </script>
+</body>
+</html>
